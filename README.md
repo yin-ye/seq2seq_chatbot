@@ -36,3 +36,5 @@ Following is a list of functions and classes exported by modules.
   - lstm_model(): initializes LSTM model.
   - decode_sequence(): decodes the input sequence characters based on decoder predictions.
 
+### Evaluation
+ evaluate_model(): evaluates models using MRR, Recall@1 and BLEU
