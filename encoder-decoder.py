@@ -1,3 +1,5 @@
+## reference made to https://www.tensorflow.org/tutorials/text/nmt_with_attention
+
 import tensorflow as tf
 tf.compat.v1.enable_eager_execution()
 tf.test.is_gpu_available()
@@ -13,7 +15,6 @@ import io
 import sys
 import math
 import time
-start_exec_time = time.time()
 
 path_to_data_train = "./dstc8-train.txt"
 path_to_data_val = "./dstc8-val-candidates.txt"
@@ -200,8 +201,214 @@ def train_model(EPOCHS):
 
         if (epoch + 1) % 2 == 0:
             checkpoint.save(file_prefix = checkpoint_prefix)
+            
+def evaluate(sentence, candidate=None, id=None):
+    attention_plot = np.zeros((max_length_targ, max_length_inp))
+
+    inputs = []
+    for word in sentence.split(' '):
+        if word in inp_lang.word_index:
+            inputs.append(inp_lang.word_index[word])
+
+    inputs = tf.keras.preprocessing.sequence.pad_sequences([inputs], maxlen=max_length_inp, padding='post')
+    inputs = tf.convert_to_tensor(inputs)
+
+    result = ''
+    value = 0
+
+    hidden = [tf.zeros((1, units))]
+    enc_out, enc_hidden = encoder(inputs, hidden)
+
+    dec_hidden = enc_hidden
+    dec_input = tf.expand_dims([targ_lang.word_index['<start>']], 0)
+
+    candidate_words = []
+    if candidate != None:
+        candidate = candidate + " <end>"
+        for word in candidate.split(' '):
+            if word in targ_lang.word_index:
+                candidate_words.append(targ_lang.word_index[word])
+
+    for t in range(max_length_targ):
+        predictions, dec_hidden, attention_weights = decoder(dec_input, dec_hidden, enc_out)
+
+        # storing the attention weights to plot later on
+        attention_weights = tf.reshape(attention_weights, (-1, ))
+        attention_plot[t] = attention_weights.numpy()
+
+        if candidate == None:
+            predicted_id = tf.argmax(predictions[0]).numpy()
+        else:
+            predicted_id = candidate_words[t]
+
+        value += predictions[0][predicted_id].numpy()
+
+        if targ_lang.index_word[predicted_id] == '<end>':
+            return result, value/t, id, sentence, attention_plot
+
+        result += targ_lang.index_word[predicted_id] + ' '
+
+        # the predicted ID is fed back into the model
+        dec_input = tf.expand_dims([predicted_id], 0)
+
+    return result, value/t, id, sentence, attention_plot
+
 
         print('Epoch {} Loss {:.4f}'.format(epoch + 1,
                                             total_loss / steps_per_epoch))
         print('Time taken for 1 epoch {} sec\n'.format(time.time() - start))
         
+def loadTestData(filename):
+    file = open(filename, mode='rt', encoding='utf-8')
+    text = file.read()
+    file.close()
+    lines = text.strip().split('\n')
+
+    allCandidates = []
+    candidates = []
+    contexts = []
+
+    for i in range(0, len(lines)):
+        if lines[i].startswith("CONTEXT:"): 
+            candidate = lines[i][8:]
+            contexts.append(candidate)
+            continue
+            
+        elif len(lines[i].strip()) == 0:
+            if i>0: allCandidates.append(candidates)
+            candidates = []
+            
+        else:
+            candidate = lines[i][12:]
+            candidates.append(candidate)
+    
+    allCandidates.append(candidates)
+    return allCandidates, contexts
+  
+ def getRankValue(target_value, unsorted_distribution):
+    sorted_distribution = sorted(unsorted_distribution, reverse=True)
+    print("sorted_distribution="+str(sorted_distribution))
+    for i in range (0, len(sorted_distribution)):
+        value = sorted_distribution[i]
+        print("value(rank"+str((i+1))+")="+str(value)+" <==> target="+str(target_value))
+        if value == target_value: 
+            return 1/(i+1)
+    return None
+  
+ def evaluate_model(filename_testdata, checkpoint_dir):
+    f_predicted = open(predicted_references+"/dstc8-sgd-predicted.txt", 'w')
+    f_reference = open(predicted_references+"/dstc8-sgd-reference.txt", 'w')
+    
+    candidates, contexts = loadTestData(filename_testdata)
+    correct_predictions = 0
+    total_predictions = 0
+    cumulative_mrr = 0
+    recall_at_1 = None
+    mrr = None
+
+    for i in range(0, len(contexts)):
+        total_predictions += 1
+        #best_value = 0
+        #best_index = 0
+        response = ""
+        response_value = 0
+        response_attention_plot = []
+        target_value = 0
+        context = contexts[i]
+        reference = candidates[i][0]
+        distribution = []
+        jobs = []
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            jobs.append(executor.submit(evaluate, preprocess_sentence(context), None, 0))
+            for j in range (0,len(candidates[i])):
+                jobs.append(executor.submit(evaluate, preprocess_sentence(context), candidates[i][j], (j+1)))
+        
+        for future in concurrent.futures.as_completed(jobs):
+            candidate_sentence, value_candidate, id, inp_sentence, attention_plot = future.result()
+            if id == 0:
+                response = candidate_sentence
+                response_value = value_candidate
+                response_attention_plot = attention_plot
+                print(str(i+1)+' '+str(id)+' predicted_sentence:', candidate_sentence, 'value:', value_candidate) 
+            else:
+                distribution.append(value_candidate)
+                print(str(i+1)+' '+str(id)+' candidate_sentence:', candidate_sentence, 'value:', value_candidate) 
+
+            if id == 1: target_value = value_candidate
+
+            #if value_candidate > best_value:
+            #    best_value = value_candidate
+            #    best_index = id
+
+        rank = getRankValue(target_value, distribution)
+        cumulative_mrr += rank
+        correct_predictions += 1 if rank == 1 else 0
+        
+        recall_at_1 = correct_predictions/total_predictions
+        mrr = cumulative_mrr/total_predictions
+        print(str(i)+' INPUT='+str(context)+' PREDICTED='+str(response)+' REFERENCE='+str(reference)+' CumulativeR@1='+str(recall_at_1)+' ('+str(correct_predictions)+' out of '+str(total_predictions)+') CumulativeMRR='+str(mrr)+' ('+str(cumulative_mrr)+' out of '+str(total_predictions)+')')
+        print("")
+        #plot_attention(response_attention_plot, context.split(' '), response.split(' '))
+
+        f_predicted.write(response+"\n")
+        f_reference.write(reference+"\n")
+    
+    f_predicted.close()
+    f_reference.close()
+
+    print("BLUE Scores=go to https://www.letsmt.eu/Bleu.aspx and provide your *.txt files under "+str(checkpoint_dir))
+    print("RECALL@1="+str(recall_at_1))
+    print("Mean Reciprocal Rank="+str(mrr))
+    
+def plot_attention(attention, sentence, predicted_sentence):
+  fig = plt.figure(figsize=(10,10))
+  ax = fig.add_subplot(1, 1, 1)
+  ax.matshow(attention, cmap='viridis')
+
+  fontdict = {'fontsize': 14}
+
+  ax.set_xticklabels([''] + sentence, fontdict=fontdict, rotation=90)
+  ax.set_yticklabels([''] + predicted_sentence, fontdict=fontdict)
+
+  ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+  ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+
+  plt.show()
+  
+  ####MAIN PROGRAM####
+  BUFFER_SIZE = len(input_tensor_train)
+BATCH_SIZE = 128
+steps_per_epoch = len(input_tensor_train)//BATCH_SIZE
+embedding_dim = 128
+units = 1024
+vocab_inp_size = len(inp_lang.word_index)+1
+vocab_tar_size = len(targ_lang.word_index)+1
+num_epochs = 1000
+dataset = tf.data.Dataset.from_tensor_slices((input_tensor_train, target_tensor_train)).shuffle(BUFFER_SIZE)
+dataset = dataset.batch(BATCH_SIZE, drop_remainder=True)
+
+encoder = Encoder(vocab_inp_size, embedding_dim, units, BATCH_SIZE)
+decoder = Decoder(vocab_tar_size, embedding_dim, units, BATCH_SIZE)
+
+checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
+checkpoint = tf.train.Checkpoint(optimizer=optimizer, encoder=encoder, decoder=decoder)
+
+## TRAIN MODEL
+for filename in os.listdir(checkpoint_dir):
+        print("Erasing file "+str(filename))
+        os.remove(checkpoint_dir+"/"+filename)
+train_model(num_epochs)
+
+## RETRAIN MODEL
+'''
+def retrain_model(num_epochs):
+  checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
+  train_model(num_epochs)
+retrain_model(retrain_model)
+'''
+
+## EVALUATE MODEL
+def val_model():
+  checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
+  evaluate_model(path_to_data_val, checkpoint_dir) ## change path_to_data_val --> path_to_data_test to use test dataset
