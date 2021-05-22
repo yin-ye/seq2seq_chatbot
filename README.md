@@ -25,6 +25,7 @@ Following is a list of functions and classes exported by modules.
 - train_model(EPOCHS): trains the model.
 - train_step(inp, targ, enc_hidden): calculates the training batch loss based on input data, target data and encoder hidden states.
 - loss_function(real, pred): defines the loss function to train the model.
+- evaluate_model(): evaluates models using MRR, Recall@1 and BLEU
   
 ### LSTM Model
   #### Data Preprocessing (one hot encoding)
@@ -36,5 +37,5 @@ Following is a list of functions and classes exported by modules.
   - lstm_model(): initializes LSTM model.
   - decode_sequence(): decodes the input sequence characters based on decoder predictions.
 
-### Evaluation
- evaluate_model(): evaluates models using MRR, Recall@1 and BLEU
+
+ 
