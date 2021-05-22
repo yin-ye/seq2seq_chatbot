@@ -16,9 +16,9 @@ import sys
 import math
 import time
 
-path_to_data_train = "./dstc8-train.txt"
-path_to_data_val = "./dstc8-val-candidates.txt"
-path_to_data_test = "./dstc8-test-candidates.txt"
+path_to_data_train = "dataset/dstc8-train.txt"
+path_to_data_val = "dataset/dstc8-val-candidates.txt"
+path_to_data_test = "dataset/dstc8-test-candidates.txt"
 predicted_references = './predicted_references' #where the predicted and reference texts go
 checkpoint_dir = './training_checkpoints'  # for training weights
 
