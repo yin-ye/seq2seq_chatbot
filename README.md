@@ -17,3 +17,13 @@ Cleans and tokenizes traini, test, and validation datasets.
 - tokenize(lang): converts sentences to fixed length vectors and returns tokenized sentences and vocabulary.
 - load_dataset(path): compiles the above functions to return vocabulary and sentence vecotrs using the source and target dataset.
 
+ ### Encoder Decoder Model
+ - Encoder(self, vocab_size, embedding_dim, enc_units, batch_sz): returns encoder output and states based on initial hidden states and input source dataset.
+ - Decoder(self, vocab_size, embedding_dim, dec_units, batch_sz): returns decoder states, outputs and attention weights using encoder outputs.
+ - BahdanauAttention(self, units): attention function used with Decoder model.
+ - train_model(EPOCHS): trains the model.
+ - train_step(inp, targ, enc_hidden): calculates the training batch loss based on input data, target data and encoder hidden states.
+ - loss_function(real, pred): defines the loss function to train the model.
+  
+ ### LSTM Model
+
