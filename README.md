@@ -4,7 +4,6 @@ Implements to sequence to sequence chatbot learning using Encoder-Decoder and Lo
 ## Requirements
 - Numpy
 - Tensorflow
-- Scikit-learn
 - Keras
 
 ## Module documentation
